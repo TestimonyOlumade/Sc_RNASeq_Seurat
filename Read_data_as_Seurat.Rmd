@@ -20,6 +20,8 @@ if (!requireNamespace("remotes", quietly = TRUE)) {
   install.packages("remotes")
 }
 remotes::install_github("mojaveazure/seurat-disk")
+
+library(SeuratDisk)
 ```
 
 ## Input formats for sc_RNASeq output data
