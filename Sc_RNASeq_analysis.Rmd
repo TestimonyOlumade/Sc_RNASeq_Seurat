@@ -1,0 +1,356 @@
+---
+title: "Sc_RNASeq_analysis_with_Seurat"
+author: "Testimony_J_Olumade"
+output: html_document
+date: "2022-12-15"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## install required packages
+```{r}
+# install.packages('Seurat')
+library(Seurat)
+
+# install.packages('tidyverse')
+library(tidyverse)
+
+# install.packages('ggplot2')
+library(ggplot2)
+
+# install UMAP
+reticulate::py_install(packages = 'umap-learn')
+```
+
+
+## Retrieving data
+if you have data from your research, then import it into R and convert them to
+Seurat objects (if they are not imported as seurat objects).
+if not, you can download publicly available sc_RNASeq data from websites like
+<https://www.10xgenomics.com/resources/datasets>  
+
+Under the 'Single Cell Gene Expression' option, there are a number of gene 
+expression data from different experiments with a brief explanation of the 
+experiment, the input files and the output files.
+
+If you are interested in downloading all the files, you can click on the 'Batch 
+download' option and you can download using the 'curl' or 'wget' options
+However, if you are only interested in the count matrix, the different Feature/cell
+matrix files in different formats are available under the 'Output files' section
+
+Using an example from the 10X Genomics website - NSCLC scRNASeq data in .HDF5 
+format.
+
+
+## move downloaded dataset from downloads folder into your working directory
+```{bash}
+# cd ~/Downloads
+
+# mv <path_to_file_in_downloads_folder> <path_to_desired_folder>
+
+# mv 40k_NSCLC_DTC_3p_HT_nextgem_Multiplex_count_raw_feature_bc_matrix.h5 ~/Rinnlab/Sc_RNASeq/
+
+#set the desired folder where the count dataset is saved as working directory
+
+# cd <path_to_desired_folder>
+# cd ~/Rinnlab/Sc_RNASeq
+```
+
+
+## load dataset into R environment
+```{r}
+
+nsclc.sparce.m <- Read10X_h5(filename = "40k_NSCLC_DTC_3p_HT_nextgem_Multiplex_count_raw_feature_bc_matrix.h5")
+
+# after running the above code, you will get a warning in the console saying 
+# "Genome matrix has multiple modalities, returning a list of matrices for this genome"
+# this means that there are other modalities asides from the gene expression data
+
+str(nsclc.sparce.m)
+
+# this will reveal that there are three modalities in the dataset - 
+# gene expression, antibody capture, and multiplexing capture.
+# however, we are only interested in the gene expression data
+
+cts <- nsclc.sparce.m$`Gene Expression`
+
+# the result is another dg file in the R environment containing just the gene
+# expression data from the feature barcode matrix you downloaded.
+# now, we need to convert the df file into a seurat object for further analysis
+
+nsclc.seurat.obj <- CreateSeuratObject(counts = cts,
+                                       project = "NSCLC",
+                                       min.cells = 3,
+                                       min.features = 200)
+
+# the option are user-defined;however, they mean that you are naming the project "NSCLC",
+# you want to keep all features that are expressed in at least 3 cells,
+# and you want to keep all the cells that have at least 200 features/genes.
+# to view the seurat object
+
+str(nsclc.seurat.obj)
+```
+
+
+## Quality control
+There is need to filter out low quality cells. This is due to many factors. Hence,
+there is need to look at the number of total features/genes and molecules/ncounts in a cell
+This will give an idea of whether the cell is of poor quality, because you will find low number of genes or molecules detected
+
+On the other hand, there may be cells with extremely high numbe rof features/genes detected
+This may be due to doublets or multiple cells sequenced together and labelled as a single cell
+These cells should all be filtered out as they may affect downstream analysis
+
+Also, there is need to take a look at the number of mitochondrial genes in the data set
+This is because in dying or low-quality cells, an increased number of mitochondrial genes is observed
+
+
+## viewing the metadata of the data set
+```{r}
+view(nsclc.seurat.obj@meta.data)
+
+# orig.ident - original identity
+# nCount_RNA - number of counts
+# nFeature_RNA - number of features
+```
+
+
+## calculating the amount of mitochondrial (MT) genes
+```{r}
+# we can add another column to the metadata file showing the % of MT reads
+
+nsclc.seurat.obj[["percent.mt"]] <- PercentageFeatureSet(nsclc.seurat.obj,
+                                                         pattern = "^MT-")
+
+# view the metadata again
+
+view(nsclc.seurat.obj@meta.data)
+
+# these features can also be visualized as a violin plot, and you can decide which features you want to run
+
+VlnPlot(nsclc.seurat.obj, 
+        features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), 
+        ncol = 3)
+
+# from the violin plot, a lot of cells have a high % of MT reads, and they need to
+# be filtered out because they infer low quality cells.
+# it can be often misleading to look at the QC metric individually.
+# they can be looked at together on a plot with two metrics on different axis
+
+FeatureScatter(nsclc.seurat.obj, 
+               feature1 = "nCount_RNA", 
+               feature2 = "nFeature_RNA") + 
+  geom_smooth(method = 'lm')
+
+# the 'geom_smooth option adds the linear regression line to the scatter plot 
+# through a linear model
+# technically, a good quality data set should follow the linear regression line
+# if you have too many data clustering the bottom right corner of the plot,
+# it is indicative of the fact that the experiment captured only a few genes and only those genes are sequenced over and over again.
+# this also goes for the top left corner of the plot, which could mean that the experiment captured a high number of genes but they are not deeply sequenced enough
+# if those data sets are present, the experiments should be inspected again for sequencing errors or the presence of artefacts, and hence, filtered out
+
+```
+
+
+## Filtering
+```{r}
+
+# the aim is filter out low quality cells based on the number of genes and high % of MT cells
+# sometimes, amount of ribosomal genes may also be considered when filtering, however,
+# this is largely due to the type of data set used, and the expected biological outcome
+# the DoubletFinder package can also be used to filter out doublets
+
+nsclc.seurat.obj <- subset(nsclc.seurat.obj, 
+                           subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & 
+                          percent.mt < 5)
+
+# this will filter out the cells having > 200 genes and < 2500 genes,
+# and keeping the cells that have MT genes < 5%
+# this code reduced the number of cells from >58000 to 24859
+
+```
+
+
+
+## Normalize data
+```{r}
+
+# normalization is important to compare gene expression across multiple cells
+# gene expression measurement must be in relative measures before comparison happens
+# to do this - divide gene expression measurement in each cell by the total expression, 
+# multiply it by a scaling factor and log transform it
+
+
+# nsclc.seurat.obj <- NormalizeData(nsclc.seurat.obj, normalization.method = "LogNormalize", scale.factor = 10000)
+
+# the options for normalizatin method and scale factor are defaults, and so they may not be mentioned; 
+# OR
+
+nsclc.seurat.obj <- NormalizeData(nsclc.seurat.obj)
+
+# post-filtering, all commands run on the seurat object is logged into the commands slot in the data
+# this also includes the parameters for each command run on the object
+
+str(nsclc.seurat.obj)
+
+```
+
+
+## Identify highly variable features
+```{r}
+
+# the idea behind identifying highly variable features is to subset only features that exhibit high cell-to-cell variation
+# focusing only on these in downstream analyses highlights the biological signal in the sc_RNASeq data sets
+
+nsclc.seurat.obj <- FindVariableFeatures(nsclc.seurat.obj, 
+                                         selection.method = "vst", 
+                                         nfeatures = 2000)
+
+# the number of features set as 2000 is default, and can be user-adjusted
+# to identify the 10 most highly variable genes
+
+top10 <- head(VariableFeatures(nsclc.seurat.obj), 10)
+
+# plot variable features with and without labels
+
+plot1 <- VariableFeaturePlot(nsclc.seurat.obj)
+
+LabelPoints(plot = plot1, points = top10, repel = TRUE)
+
+```
+
+
+
+## Scaling
+```{r}
+
+# scaling is important because the sc_RNASeq data contains unwanted sources of variation
+# some may be due to technical noise (batch effects) or from biological sources (difference in cell cycles)
+# this is important so that the cells, in downstream analyses do not cluster due to these unwanted variations but due to actual biological similarity/effects
+
+all.genes <- rownames(nsclc.seurat.obj)
+
+# to provide the names of all the genes as features
+
+nsclc.seurat.obj <- ScaleData(nsclc.seurat.obj, 
+                              features = all.genes)
+# to view the in the seurat object
+str(nsclc.seurat.obj)
+
+```
+
+
+
+## Perform linear dimensionality reduction
+```{r}
+
+# the linear dimensionality reduction, Principal Component Analysis (PCA), is done to
+# identify the sources of hydrogeneity in the data set
+
+nsclc.seurat.obj <- RunPCA(nsclc.seurat.obj, 
+                           features = VariableFeatures(object = nsclc.seurat.obj))
+
+# by default, it uses the variable features you specified as input.
+# however, it can be changed to use all features as input (if you so wish)
+----------
+# visualize PCA results
+
+print(nsclc.seurat.obj[["pca"]], 
+      dims = 1:5, 
+      nfeatures = 5)
+
+# will view the first 5 features with the positive and negative PCA scores
+
+DimHeatmap(nsclc.seurat.obj, dims = 1, cells = 500, balanced = TRUE)
+
+# will plot a heat map to show the PCA scores and genes for 1 principal component,
+# and for 500 cells
+
+# determine dimensionality of the data
+
+# this means choosing only the statistically significant PCs that capture the majority of the signal in downstream analyses
+
+ElbowPlot(nsclc.seurat.obj)
+
+# the plot explains the level variations across the different PCs generated
+# there comes a point in the plot where there is some sort of elbow, after which
+# the PCs do not vary much in the % of variance that they explain.
+# it is better to err on the higher side, so that maximum statistically significant PCs are captured
+
+```
+
+
+
+## Clustering
+```{r}
+
+# the goal is to cluster cells with similar expression patterns
+# first identify neighbors 
+
+nsclc.seurat.obj <- FindNeighbors(nsclc.seurat.obj, 
+                                  dims = 1:15)
+
+# the "dims" option specifies the number of PCs determined to be statistically significant from the elbow plot
+# then assign cells to clusters
+
+# understanding resolution
+
+#the lower the resolution, the fewer the clusters; and vice versa
+
+nsclc.seurat.obj <- FindClusters(nsclc.seurat.obj, 
+                                 resolution = c(0.1,0.3, 0.5, 0.7, 1))
+
+# you may need to play around with the resolution (from 0 - 1, or >1) to discover
+# which resolution best separates the cells into distinct clusters
+
+# view metadata to see number of clusters for each resolution
+
+View(nsclc.seurat.obj@meta.data)
+
+# to view the different clusters, we can plot a DimPlot and see how well they separate
+
+DimPlot(nsclc.seurat.obj, 
+        group.by = "RNA_snn_res.0.1", 
+        label = TRUE)
+
+# a resolution of 0.1 seems to be the best for this data. it can be increased according to the peculiarity of datasets
+
+# setting identity of clusters
+
+Idents(nsclc.seurat.obj)
+Idents(nsclc.seurat.obj) <- "RNA_snn_res.0.1"
+
+# the identity of the clusters can be adjusted by changing the resolution from the code above
+# the name "RNA_snn_res.0.1" is already a column in the output from the "FindClusters" option
+# so it will use that data to set identities for the clusters, where specified
+# otherwise, it picks the default identities
+# to now view changes in identities, from the default - 
+
+Idents(nsclc.seurat.obj)
+
+```
+
+
+## Non-linear dimensionality reduction
+```{r}
+
+# the goal is to group cells of similar types together in low dimensional space
+# using UMAP
+
+nsclc.seurat.obj <- RunUMAP(nsclc.seurat.obj, 
+                            dims = 1:15)
+
+# note that you can set `label = TRUE` or use the LabelClusters function to help label individual clusters
+
+# to view UMAP
+DimPlot(nsclc.seurat.obj, 
+        reduction = "umap")
+
+```
+
+
