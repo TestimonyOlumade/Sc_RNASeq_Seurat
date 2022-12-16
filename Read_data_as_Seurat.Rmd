@@ -25,7 +25,7 @@ library(SeuratDisk)
 ```
 
 ## Input formats for sc_RNASeq output data
-sc_RNASeq output data can be stored in different formats.
+sc_RNASeq output data can be stored in different formats
 1. 10x hdf5 -  stored as .hdf5
 2. R data format - stored as .rds
 3. Anndata object - stored as .h5ad 
