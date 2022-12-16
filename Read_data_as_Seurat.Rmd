@@ -1,0 +1,140 @@
+---
+title: "Read_data_as_Seurat"
+author: "Testimony_J_Olumade"
+date: "2022-12-16"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r install required packages}
+# install.packages('Seurat')
+library(Seurat)
+
+# SeuratDisk is not currently available on CRAN. You can install it from GitHub with
+if (!requireNamespace("remotes", quietly = TRUE)) {
+  install.packages("remotes")
+}
+remotes::install_github("mojaveazure/seurat-disk")
+```
+
+## Input formats for sc_RNASeq output data
+sc_RNASeq output data can be stored in different formats.
+1. 10x hdf5 -  stored as .hdf5
+2. R data format - stored as .rds
+3. Anndata object - stored as .h5ad 
+4. Loom - stored as .loom 
+5. Text based Market Exchange format - stored as .mtx
+6. Tab separated value format - stored as .tsv
+
+## Reading a .RDS document
+```{r reading .rds}
+
+rds_object <- readRDS('filename.rds')
+
+# this converts the .rds document into a seurat object
+# to view the seurat object
+
+str(rds_object)
+```
+
+
+## Reading a .HDF5 document
+```{r reading .hdf5}
+
+hdf5_obj <- read10x_h5(filename = filename.hdf5,
+                       use.names = TRUE,
+                       unique.features = TRUE)
+
+# this imports the file into the R environment as a dg (dynamic graph) object
+# to view the first 10 rows adn columns of the dg object
+
+hdf5_obj [1:10, 1:10]
+
+# to convert the dg object into a seurat object 
+
+seurat_obj <- CreateSeuratObject(counts = hdf5_obj)
+
+# to view the seurat object
+
+str(seurat_obj)
+```
+
+
+## Reading a .MTX document
+```{r reading .mtx}
+
+mtx_obj <- ReadMtx(mtx = filename.mtx.gz,
+                   features = featuresfile.tsv.gz,
+                   cells = barcodefile.tsv.gz)
+
+# this imports the file into the R environment as a dg (dynamic graph) object
+# to view the first 10 rows adn columns of the dg object
+
+mtx_obj [1:10, 1:10]
+
+# to convert the dg object into a seurat object 
+
+seurat_mtx <- CreateSeuratObject(counts = mtx_obj)
+```
+
+
+## Reading a .LOOM document
+```{r reading .loom}
+
+loom_obj <- connect(filename = filename.loom,
+                   mode = 'r')
+
+# this imports the file into the R environment as a dg (dynamic graph) object
+# to convert the dg object into a seurat object 
+
+seurat_loom <- as.Seurat(loom_obj)
+
+# to view the seurat object 
+
+str(seurat_loom)
+```
+
+
+## Reading a .H5AD document
+```{r reading .h5ad}
+
+# step 1: convert AnnData object to a h5seurat file
+
+convert("filename.h5ad",
+        dest = "h5seurat",
+        overwrite = TRUE)
+
+# the code above is not assigned to any name
+# this is because the 'overwrite' part of the code tells R to simply convert 
+# the same document from a .h5ad file to a .h5seurat file
+
+# step 2: load the .h5seurat file into a seurat object 
+
+seurat_anndata <- LoadH5Seurat("filename.h5seurat")
+
+# to view the seurat object 
+
+str(seurat_anndata)
+```
+
+
+## Read a .TSV document
+```{r reading tsv}
+
+# convert count data in .tsv format into a data frame object
+
+count.df <- read.delim("countfile.tsv",
+                       header = TRUE)
+
+# create a seurat object from the counts data frame object
+
+seurat_tsv <- CreateSeuratObject(counts = count.df)
+```
+
+Further analysis on sc_RNASeq data can then be done using seurat in R
+
