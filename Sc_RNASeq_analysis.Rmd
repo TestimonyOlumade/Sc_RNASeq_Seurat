@@ -57,7 +57,7 @@ format.
 #set the desired folder where the count dataset is saved as working directory
 
 # cd <path_to_desired_folder>
-# cd ~/Rinnlab/Sc_RNASeq
+# cd ~/Sc_RNASeq
 ```
 
 
