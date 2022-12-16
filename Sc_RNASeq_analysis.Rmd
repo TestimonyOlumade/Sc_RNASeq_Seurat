@@ -255,7 +255,7 @@ str(nsclc.seurat.obj)
 nsclc.seurat.obj <- RunPCA(nsclc.seurat.obj, 
                            features = VariableFeatures(object = nsclc.seurat.obj))
 
-# by default, it uses the variable features you specified as input.
+# by default, it uses the variable features you specified as input
 # however, it can be changed to use all features as input (if you so wish)
 ----------
 # visualize PCA results
